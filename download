@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+command -v html2text > /dev/null 2>&1 || {
+  echo >&2 "download: I require html2text, but it's not installed. Aborting.";
+  exit 1;
+}
+
+command -v jq > /dev/null 2>&1 || {
+  echo >&2 "download: I require jq, but it's not installed. Aborting.";
+  exit 1;
+}
+
+command -v curl > /dev/null 2>&1 || {
+  echo >&2 "download: I require curl, but it's not installed. Aborting.";
+  exit 1;
+}
+
+function usage() {
+    echo "Usage: download [URL] [SOURCE]"
+    echo ""
+    echo "  Example:"
+    echo "    URL: 'https://<customer>.humany.net/<client>'"
+    echo "    SOURCE: '<customer>'"
+}
+
+if [[ "$#" != 2 ]]; then
+    usage
+    exit 1
+fi
+
+SCRIP_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+humany_base_url="$1"
+humany_source="$2"
+
+humany_full_url="$humany_base_url/guides?client=1&take=100000"
+data_file="$SCRIP_DIR/$humany_source.json"
+
+result=$(curl --silent "$humany_full_url" | jq .Matches)
+
+items='[]'
+
+echo $result | jq -c '.[]' | while read i; do
+  id=$(echo $i | jq -r .Id)
+  title=$(echo $i | jq -r .Title)
+  body=$(curl --silent "$humany_base_url/guides/$id?client=1" | jq -r .Body)
+  parsed_content=$(echo $body | html2text -utf8 | tr \" ' ')
+  faq_item="{\"id\": \"$id\", \"question\": \"$title\", \"answer\": \"$parsed_content\", \"source\": \"$humany_source\"}"
+  items=$(echo $items | jq --argjson item "$(echo $faq_item)" '. += [$item]')
+  echo $items > $data_file
+done
